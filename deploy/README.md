@@ -1,6 +1,6 @@
 # Deploy AthletIQ to piserver (Docker)
 
-Run the full stack on a Raspberry Pi or other LAN host: **Postgres**, **EHRbase**, **API**, **Next.js frontend**, and **marketing landing page**.
+Run the full stack on a Raspberry Pi or other LAN host: **PostgreSQL**, **HAPI FHIR**, **.NET API**, **Next.js frontend**, and **marketing landing page**.
 
 ## Prerequisites (on the Pi)
 
@@ -10,8 +10,12 @@ Run the full stack on a Raspberry Pi or other LAN host: **Postgres**, **EHRbase*
    sudo usermod -aG docker kbo
    newgrp docker
    ```
-3. **RAM**: 4 GB+ recommended (EHRbase is heavy on a Pi)
+3. **RAM**: 4 GB+ recommended (HAPI FHIR and image builds are heavy on a Pi)
 4. **SSH** from your Mac/Linux dev machine
+5. **External `web` Docker network** (for Traefik reverse proxy):
+   ```bash
+   docker network create web
+   ```
 
 ## One-time setup (on your Mac)
 
@@ -41,6 +45,8 @@ Edit `deploy/.env.pi`:
 
 - Set strong `POSTGRES_PASSWORD` and `JWT_SECRET` (min 32 characters)
 - Confirm `PI_HOST=piserver` resolves on your LAN (or use an IP)
+
+AI provider settings (Gemini, Ollama, etc.) come from `AthletIQ-Backend/src/AthletIQ.Api/appsettings.json` baked into the API image. Override via compose env vars only if you need per-host values without rebuilding.
 
 `deploy/.env.pi` is gitignored.
 
@@ -82,6 +88,19 @@ Routine rebuild without wiping the database:
 ```bash
 ./scripts/build-and-deploy-piserver.sh
 ```
+
+## Stack
+
+| Service | Image / build | Purpose |
+|---------|---------------|---------|
+| `postgres` | `postgres:17-alpine` | AthletIQ application database |
+| `hapi-fhir-db` | `postgres:16-alpine` | HAPI FHIR persistence |
+| `hapi-fhir` | `hapiproject/hapi:latest` | FHIR server (internal; journal API only) |
+| `api` | `AthletIQ-Backend/Dockerfile` | .NET 10 API |
+| `frontend` | `AthletIQ-frontend/Dockerfile` | Next.js web app |
+| `landingpage` | `AthletIQ-Landingpage/Dockerfile` | Static marketing site |
+
+HAPI FHIR is not exposed on the host — clients use AthletIQ journal endpoints, not HAPI directly.
 
 ## URLs
 
@@ -133,6 +152,11 @@ See [AthletIQ-Backend/README.md](../../AthletIQ-Backend/README.md) for seed deta
   ./scripts/deploy-piserver.sh
   ```
 
+**Journal extraction or AI features fail**
+
+- Check provider and model settings in `AthletIQ-Backend/src/AthletIQ.Api/appsettings.json`
+- For Ollama, ensure `Ollama:BaseUrl` in appsettings points at a host reachable from the Pi (LAN IP, not `localhost`)
+
 **Check status on the Pi**
 
 ```bash
@@ -149,5 +173,4 @@ ssh kbo@piserver 'cd ~/athletiq && docker compose -f AthletIQ-Deploy/deploy/dock
 
 - Replace default passwords and JWT secret in `deploy/.env.pi` before exposing the Pi on a network.
 - Do not commit `deploy/.env.pi` or SSH passwords to git.
-- Review API keys in backend `appsettings.json` before production use.
 - Swagger is disabled in Production; do not enable it on publicly exposed hosts.

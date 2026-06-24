@@ -128,6 +128,8 @@ rsync -avz --delete -e "${RSYNC_SHELL}" \
   --exclude '**/.pnpm-store/' \
   --exclude '.DS_Store' \
   --exclude 'AthletIQ-mobile/' \
+  --exclude 'AthletIQ/' \
+  --exclude 'piserver_reversed_proxy/' \
   "${REPO_ROOT}/" "${SSH_TARGET}:${PI_REMOTE_DIR}/"
 
 echo "==> Uploading deploy/.env.pi to Pi"
@@ -151,7 +153,7 @@ fi
 
 if [[ "$DO_SEED" -eq 1 ]]; then
   echo "==> Seeding demo data"
-  ssh_cmd "${COMPOSE_CMD} run --rm api dotnet AthletIQ.Api.dll --seed-only"
+  ssh_cmd "${COMPOSE_CMD} run --rm api dotnet AthletIQ.Api.dll --seed"
 fi
 
 echo "==> Container status"
@@ -163,8 +165,8 @@ Deploy finished.
 
   App:          http://${PI_HOST}:${FRONTEND_PORT:-5000}
   Landing page: http://${PI_HOST}:${LANDINGPAGE_PORT:-8081}
-  API:          http://${PI_HOST}:${API_PORT:-8080}
-  Health:       http://${PI_HOST}:${API_PORT:-8080}/health
+  API:          http://${PI_HOST}:${API_PORT:-8082}
+  Health:       http://${PI_HOST}:${API_PORT:-8082}/health
 
 First-time login: run with --seed, then use demo credentials from AthletIQ-Deploy/deploy/README.md
 EOF

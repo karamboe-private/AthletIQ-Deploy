@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:17-alpine
+    container_name: athletiq_postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-athletiq}
@@ -14,82 +15,79 @@ services:
       timeout: 5s
       retries: 5
 
-  openehr-db:
-    image: ehrbase/ehrbase-v2-postgres:16.2
+  hapi-fhir-db:
+    image: postgres:16-alpine
+    container_name: athletiq_hapi_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${OPENEHR_DB_PASSWORD:-postgres}
-      EHRBASE_USER_ADMIN: ehrbase
-      EHRBASE_PASSWORD_ADMIN: ${EHRBASE_ADMIN_PASSWORD:-ehrbase}
-      EHRBASE_USER: ehrbase_restricted
-      EHRBASE_PASSWORD: ${EHRBASE_PASSWORD:-ehrbase_restricted}
+      POSTGRES_DB: hapi
+      POSTGRES_USER: hapi
+      POSTGRES_PASSWORD: ${HAPI_DB_PASSWORD:-hapi_secret}
     volumes:
-      - athletiq_openehr_postgres_data:/var/lib/postgresql/data
+      - athletiq_hapi_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U hapi -d hapi"]
+      interval: 10s
       timeout: 5s
-      retries: 12
+      retries: 5
 
-  openehr:
-    image: ehrbase/ehrbase:latest
+  hapi-fhir:
+    image: hapiproject/hapi:latest
+    container_name: athletiq_hapi_fhir
     restart: unless-stopped
     depends_on:
-      openehr-db:
+      hapi-fhir-db:
         condition: service_healthy
     environment:
-      DB_URL: jdbc:postgresql://openehr-db:5432/ehrbase
-      DB_USER: ehrbase_restricted
-      DB_PASS: ${EHRBASE_PASSWORD:-ehrbase_restricted}
-      DB_USER_ADMIN: ehrbase
-      DB_PASS_ADMIN: ${EHRBASE_ADMIN_PASSWORD:-ehrbase}
-      SERVER_NODENAME: local.ehrbase.org
-      SPRING_PROFILES_ACTIVE: local
-      ADMIN_API_ACTIVE: "true"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://hapi-fhir-db:5432/hapi
+      SPRING_DATASOURCE_USERNAME: hapi
+      SPRING_DATASOURCE_PASSWORD: ${HAPI_DB_PASSWORD:-hapi_secret}
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      HIBERNATE_DIALECT: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgresDialect
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/ehrbase/ || exit 1"]
+      test: ["CMD", "java", "-cp", "/app", "HealthCheck"]
       interval: 15s
       timeout: 10s
       retries: 12
-      start_period: 30s
+      start_period: 90s
 
   api:
     build:
       context: ../../AthletIQ-Backend
       dockerfile: Dockerfile
+    container_name: athletiq_api
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
-      openehr:
+      hapi-fhir:
         condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-athletiq};Username=${POSTGRES_USER:-athletiq};Password=${POSTGRES_PASSWORD}
-      OpenEhr__BaseUrl: http://openehr:8080/ehrbase
+      HapiFhir__BaseUrl: http://hapi-fhir:8080/fhir
       JwtOptions__SecretKey: ${JWT_SECRET:?Set JWT_SECRET in deploy/.env.pi}
       JwtOptions__Issuer: ${JWT_ISSUER:-AthletIQ}
       JwtOptions__Audience: ${JWT_AUDIENCE:-AthletIQ}
       JwtOptions__ExpirationMinutes: ${JWT_EXPIRATION_MINUTES:-60}
       SeedData__RunOnStartup: ${SEED_ON_STARTUP:-false}
     ports:
-      - "${API_PORT:-8080}:8080"
+      - "${API_PORT:-8082}:8080"
     networks:
       default: {}
       web:
         aliases:
           - athletiq-api
     healthcheck:
-      # aspnet image has no wget/curl; bash /dev/tcp works in the Debian-based runtime
-      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /health HTTP/1.0\\r\\n\\r\\n\" >&3 && head -1 <&3 | grep -q \"200\"'"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health > /dev/null || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 12
-      start_period: 30s
+      retries: 18
+      start_period: 120s
 
   frontend:
+    container_name: athletiq_frontend
     build:
       context: ../../AthletIQ-frontend
       dockerfile: Dockerfile
@@ -126,7 +124,7 @@ services:
 
 volumes:
   athletiq_postgres_data:
-  athletiq_openehr_postgres_data:
+  athletiq_hapi_postgres_data:
 
 networks:
   web:
