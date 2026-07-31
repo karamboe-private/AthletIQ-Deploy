@@ -56,7 +56,7 @@ From the **AthletIQ-Deploy** directory on your dev machine:
 
 ```bash
 cd AthletIQ-Deploy
-chmod +x scripts/deploy-piserver.sh scripts/build-and-deploy-piserver.sh
+chmod +x scripts/deploy-piserver.sh scripts/build-and-deploy-piserver.sh scripts/build-local-and-deploy-piserver.sh
 ./scripts/deploy-piserver.sh
 ```
 
@@ -68,7 +68,31 @@ Or from the **repo root**:
 
 First deploy builds images **on the Pi** (ARM64). Expect **15–30+ minutes**.
 
-### Options
+### Faster: build locally, transfer images
+
+On an Apple Silicon Mac (or any machine that can build `linux/arm64`), prefer:
+
+```bash
+./scripts/build-local-and-deploy-piserver.sh
+```
+
+This builds `api` / `frontend` / `landingpage` locally, `docker save`s them to the Pi, then starts the stack with `--no-build` (no compile on the Pi).
+
+| Flag | Description |
+|------|-------------|
+| `--wipe` | `docker compose down -v` — **deletes** Postgres + HAPI volumes |
+| `--seed` | Load demo org/users/teams after deploy |
+| `--logs` | Tail compose logs when finished |
+| `--skip-build` | Transfer existing local `:pi` image tags only |
+| `--platform` | Target platform (default `linux/arm64`) |
+
+Fresh Pi with empty DBs + demo data:
+
+```bash
+./scripts/build-local-and-deploy-piserver.sh --wipe --seed
+```
+
+### Options (build-on-Pi deploy)
 
 | Flag | Description |
 |------|-------------|
@@ -77,13 +101,13 @@ First deploy builds images **on the Pi** (ARM64). Expect **15–30+ minutes**.
 | `--no-build` | Restart without rebuilding images |
 | `--down-first` | Stop containers before deploy (volumes preserved) |
 
-Example first-time setup with demo data:
+Example first-time setup with demo data (build on Pi):
 
 ```bash
 ./scripts/deploy-piserver.sh --seed
 ```
 
-Routine rebuild without wiping the database:
+Routine rebuild **on the Pi** without wiping the database:
 
 ```bash
 ./scripts/build-and-deploy-piserver.sh
@@ -143,7 +167,8 @@ See [AthletIQ-Backend/README.md](../../AthletIQ-Backend/README.md) for seed deta
 
 **Build runs out of memory on Pi**
 
-- Increase swap, or build on a more powerful machine with `docker buildx` (advanced).
+- Prefer `./scripts/build-local-and-deploy-piserver.sh` (builds on your Mac, transfers images).
+- Or increase swap on the Pi.
 
 **Frontend cannot reach API**
 

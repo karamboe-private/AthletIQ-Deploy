@@ -52,6 +52,7 @@ services:
       start_period: 90s
 
   api:
+    image: athletiq-api:pi
     build:
       context: ../../AthletIQ-Backend
       dockerfile: Dockerfile
@@ -87,6 +88,7 @@ services:
       start_period: 120s
 
   frontend:
+    image: athletiq-frontend:pi
     container_name: athletiq_frontend
     build:
       context: ../../AthletIQ-frontend
@@ -110,6 +112,7 @@ services:
           - athletiq-frontend
 
   landingpage:
+    image: athletiq-landingpage:pi
     container_name: athletiq-landing
     build:
       context: ../../AthletIQ-Landingpage
