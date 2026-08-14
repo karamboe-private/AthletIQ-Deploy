@@ -73,6 +73,17 @@ services:
       JwtOptions__Audience: ${JWT_AUDIENCE:-AthletIQ}
       JwtOptions__ExpirationMinutes: ${JWT_EXPIRATION_MINUTES:-60}
       SeedData__RunOnStartup: ${SEED_ON_STARTUP:-false}
+      # --- AI providers (override appsettings.json baked into the API image) ---
+      ChatAi__Provider: ${CHAT_AI_PROVIDER:-Gemini}
+      WearableAi__Provider: ${WEARABLE_AI_PROVIDER:-Gemini}
+      NutritionAi__Provider: ${NUTRITION_AI_PROVIDER:-Gemini}
+      JournalAi__Provider: ${JOURNAL_AI_PROVIDER:-Gemini}
+      DeepSeek__ApiKey: ${DEEPSEEK_API_KEY:-}
+      DeepSeek__Model: ${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      DeepSeek__ClinicalExtractionModel: ${DEEPSEEK_CLINICAL_EXTRACTION_MODEL:-deepseek-v4-flash}
+      Gemini__ApiKey: ${GEMINI_API_KEY:-}
+      Gemini__Model: ${GEMINI_MODEL:-gemini-3.5-flash}
+      Gemini__ClinicalExtractionModel: ${GEMINI_CLINICAL_EXTRACTION_MODEL:-gemini-3.5-flash}
     ports:
       - "${API_PORT:-8082}:8080"
     networks:

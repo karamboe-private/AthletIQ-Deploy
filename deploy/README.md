@@ -46,7 +46,23 @@ Edit `deploy/.env.pi`:
 - Set strong `POSTGRES_PASSWORD` and `JWT_SECRET` (min 32 characters)
 - Confirm `PI_HOST=piserver` resolves on your LAN (or use an IP)
 
-AI provider settings (Gemini, Ollama, etc.) come from `AthletIQ-Backend/src/AthletIQ.Api/appsettings.json` baked into the API image. Override via compose env vars only if you need per-host values without rebuilding.
+AI provider settings (Gemini, OpenAI, DeepSeek, etc.) come from `AthletIQ-Backend/src/AthletIQ.Api/appsettings.json` baked into the API image. You can override them at deploy time without rebuilding via `.env.pi` (values are passed into the `api` container as `*__*` env vars):
+
+- `CHAT_AI_PROVIDER`, `WEARABLE_AI_PROVIDER`, `NUTRITION_AI_PROVIDER`, `JOURNAL_AI_PROVIDER` — pick `Gemini`, `OpenAI`, or `DeepSeek` per capability.
+- `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` (e.g. `deepseek-v4-flash` or `deepseek-v4-pro`), `DEEPSEEK_CLINICAL_EXTRACTION_MODEL` — DeepSeek credentials/model.
+- `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_CLINICAL_EXTRACTION_MODEL` — Gemini credentials/model.
+
+Example to use DeepSeek for everything:
+
+```bash
+CHAT_AI_PROVIDER=DeepSeek
+WEARABLE_AI_PROVIDER=DeepSeek
+NUTRITION_AI_PROVIDER=DeepSeek
+JOURNAL_AI_PROVIDER=DeepSeek
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_CLINICAL_EXTRACTION_MODEL=deepseek-v4-pro
+```
 
 `deploy/.env.pi` is gitignored.
 
@@ -180,7 +196,6 @@ See [AthletIQ-Backend/README.md](../../AthletIQ-Backend/README.md) for seed deta
 **Journal extraction or AI features fail**
 
 - Check provider and model settings in `AthletIQ-Backend/src/AthletIQ.Api/appsettings.json`
-- For Ollama, ensure `Ollama:BaseUrl` in appsettings points at a host reachable from the Pi (LAN IP, not `localhost`)
 
 **Check status on the Pi**
 
