@@ -73,6 +73,9 @@ services:
       JwtOptions__Audience: ${JWT_AUDIENCE:-AthletIQ}
       JwtOptions__ExpirationMinutes: ${JWT_EXPIRATION_MINUTES:-60}
       SeedData__RunOnStartup: ${SEED_ON_STARTUP:-false}
+      # Generate ~30 days of dashboard demo data (training sessions, wellness
+      # check-ins, ACWR trend, availabilities) during --seed / startup when "true".
+      SEED_DASHBOARD_DEMO_DATA: ${SEED_DASHBOARD_DEMO_DATA:-false}
       # --- AI providers (override appsettings.json baked into the API image) ---
       ChatAi__Provider: ${CHAT_AI_PROVIDER:-Gemini}
       WearableAi__Provider: ${WEARABLE_AI_PROVIDER:-Gemini}

@@ -72,62 +72,117 @@ From the **AthletIQ-Deploy** directory on your dev machine:
 
 ```bash
 cd AthletIQ-Deploy
-chmod +x scripts/deploy-piserver.sh scripts/build-and-deploy-piserver.sh scripts/build-local-and-deploy-piserver.sh
+chmod +x scripts/*.sh
+```
+
+### Quick start — fresh demo environment (DEV ONLY)
+
+Run the one-shot demo script to build, wipe all data, create a brand-new database,
+provision the Træff demo organization, and seed demo data:
+
+```bash
+./scripts/fresh-deploy-traeff-piserver.sh
+```
+
+This **wipes all data** — use it for demo/dev, not production. It chains:
+
+1. `deploy-piserver.sh --wipe` — build + transfer + fresh DBs
+2. `provision-piserver.sh` — create the `Træff` demo org + admin
+3. `seed-traeff-piserver.sh --dashboard` — seed roster + 30 days of dashboard data
+
+Building **on the Pi** instead (slower, 15–30+ min): `./scripts/fresh-deploy-traeff-piserver.sh --build-on-pi`
+
+### The operations
+
+| Operation | Script |
+|-----------|--------|
+| **Deploy** (build + transfer + start, keeps data) | `./scripts/deploy-piserver.sh` |
+| **Wipe** (fresh DBs) | `./scripts/deploy-piserver.sh --wipe` |
+| **Provision a club** (+ admin, no demo data) | `./scripts/provision-piserver.sh --organization-name "Your FC" ...` |
+| **Seed Træff demo data** | `./scripts/seed-traeff-piserver.sh [--dashboard]` |
+| **Full demo** (wipe + provision + seed + dashboard) | `./scripts/fresh-deploy-traeff-piserver.sh` |
+
+Examples:
+
+```bash
+# Deploy a new version, keep the existing database
 ./scripts/deploy-piserver.sh
+
+# Deploy a new version with fresh DBs (wipes all data)
+./scripts/deploy-piserver.sh --wipe
+
+# Deploy + wipe + provision + seed + dashboard in one go (demo/dev only)
+./scripts/fresh-deploy-traeff-piserver.sh
+
+# Build on the Pi instead of locally (slower)
+./scripts/deploy-piserver.sh --build-on-pi
+
+# Add a real club + admin on an existing stack (production)
+./scripts/provision-piserver.sh \
+  --organization-name "Your FC" --admin-email "admin@yourfc.no" --admin-password "A-Strong-Password"
+
+# Seed the Træff demo roster (+ dashboard data) after deploying
+./scripts/seed-traeff-piserver.sh --dashboard
 ```
 
-Or from the **repo root**:
+### Flags
 
-```bash
-./AthletIQ-Deploy/scripts/deploy-piserver.sh
-```
-
-First deploy builds images **on the Pi** (ARM64). Expect **15–30+ minutes**.
-
-### Faster: build locally, transfer images
-
-On an Apple Silicon Mac (or any machine that can build `linux/arm64`), prefer:
-
-```bash
-./scripts/build-local-and-deploy-piserver.sh
-```
-
-This builds `api` / `frontend` / `landingpage` locally, `docker save`s them to the Pi, then starts the stack with `--no-build` (no compile on the Pi).
+**`deploy-piserver.sh`** — deploy the stack (default: build locally on linux/arm64, transfer, start)
 
 | Flag | Description |
 |------|-------------|
-| `--wipe` | `docker compose down -v` — **deletes** Postgres + HAPI volumes |
-| `--seed` | Load demo org/users/teams after deploy |
-| `--logs` | Tail compose logs when finished |
-| `--skip-build` | Transfer existing local `:pi` image tags only |
-| `--platform` | Target platform (default `linux/arm64`) |
-
-Fresh Pi with empty DBs + demo data:
-
-```bash
-./scripts/build-local-and-deploy-piserver.sh --wipe --seed
-```
-
-### Options (build-on-Pi deploy)
-
-| Flag | Description |
-|------|-------------|
-| `--seed` | Load demo org/users/teams after deploy |
-| `--logs` | Tail compose logs when finished |
-| `--no-build` | Restart without rebuilding images |
+| `--build-on-pi` | Build images on the Pi instead of locally (15–30+ min) |
+| `--skip-build` | Reuse existing local `:pi` image tags (transfer only) |
+| `--wipe` | `docker compose down -v` — **deletes** Postgres + HAPI volumes (fresh DBs) |
 | `--down-first` | Stop containers before deploy (volumes preserved) |
+| `--platform` | Target platform (default `linux/arm64`) |
+| `--logs` | Tail compose logs when finished |
 
-Example first-time setup with demo data (build on Pi):
+**`provision-piserver.sh`** — create a club + admin (production; idempotent)
+
+| Flag | Description |
+|------|-------------|
+| `--organization-name <name>` | Club / organization name (required) |
+| `--admin-email <email>` | Admin login email (required) |
+| `--admin-password <pass>` | Admin login password (required) |
+
+Or set `ORG_NAME` / `ORG_ADMIN_EMAIL` / `ORG_ADMIN_PASSWORD` in `deploy/.env.pi` and run
+without arguments.
+
+**`seed-traeff-piserver.sh`** — seed the Træff demo data (roster + login accounts)
+
+| Flag | Description |
+|------|-------------|
+| `--dashboard` | Also generate ~30 days of dashboard demo data (training/wellness/ACWR) |
+
+**`fresh-deploy-traeff-piserver.sh`** — DEV/DEMO: wipe + provision + seed + dashboard data
+
+| Flag | Description |
+|------|-------------|
+| `--build-on-pi` | Build images on the Pi instead of locally |
+| `--skip-build` | Reuse existing local `:pi` tags (transfer only) |
+| `--logs` | Follow compose logs when finished |
+| `--platform` | Target platform for the local build |
+
+Demo org values default to `Træff` / `admin@demo.athletiq.local` / `Passw0rd!` and can
+be overridden via `ORG_NAME` / `ORG_ADMIN_EMAIL` / `ORG_ADMIN_PASSWORD` in `deploy/.env.pi`.
+
+### Add another club (production)
+
+On an already-deployed stack, provision a new club + admin with
+`scripts/provision-piserver.sh` — no build, deploy, wipe, or demo data. Run it once
+per club:
 
 ```bash
-./scripts/deploy-piserver.sh --seed
+./scripts/provision-piserver.sh \
+  --organization-name "Your FC" \
+  --admin-email "admin@yourfc.no" \
+  --admin-password "A-Strong-Password"
 ```
 
-Routine rebuild **on the Pi** without wiping the database:
-
-```bash
-./scripts/build-and-deploy-piserver.sh
-```
+Idempotent (re-running the same org name is a no-op). Or set defaults in
+`deploy/.env.pi` (`ORG_NAME` / `ORG_ADMIN_EMAIL` / `ORG_ADMIN_PASSWORD`) and run the
+script without arguments.
 
 ## Stack
 
@@ -155,12 +210,16 @@ Change ports via `LANDINGPAGE_PORT`, `FRONTEND_PORT`, and `API_PORT` in `deploy/
 
 ## Database migrations
 
-The API runs **EF Core migrations automatically on startup** (`ApplyStartupAsync`). No manual `dotnet ef` step is required on the Pi.
+Migrations are applied automatically — on API startup (`ApplyStartupAsync`) and by the
+`--provision` / `--seed` one-off runs. No manual `dotnet ef` step is required on the Pi.
 
-## Demo login (after `--seed`)
+## Demo login (after a fresh demo deploy)
 
+- Admin: the email in `ORG_ADMIN_EMAIL` (default `admin@demo.athletiq.local`)
+- Players/staff: `*@traeff.no`
 - Password: `Passw0rd!`
-- Admin example: `admin@demo.athletiq.local` (use the seeded organization ID on login)
+- On login, select the seeded organization ID (shown during provisioning) or look it up
+  via `GET /api/v1/auth/organizations`.
 
 See [AthletIQ-Backend/README.md](../../AthletIQ-Backend/README.md) for seed details.
 
@@ -183,7 +242,7 @@ See [AthletIQ-Backend/README.md](../../AthletIQ-Backend/README.md) for seed deta
 
 **Build runs out of memory on Pi**
 
-- Prefer `./scripts/build-local-and-deploy-piserver.sh` (builds on your Mac, transfers images).
+- Prefer `./scripts/deploy-piserver.sh` (builds on your Mac, transfers images).
 - Or increase swap on the Pi.
 
 **Frontend cannot reach API**

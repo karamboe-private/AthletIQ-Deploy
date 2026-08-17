@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Deploy AthletIQ full stack to piserver via Docker Compose.
+# Deploy the AthletIQ stack to piserver.
+# Default: build images locally (linux/arm64) and transfer them to the Pi (fast on
+# Apple Silicon). Use --build-on-pi to build on the Pi instead. No data is changed
+# unless --wipe is passed. Provisioning and demo-seed live in separate scripts:
+#   scripts/provision-piserver.sh  (add a club + admin)
+#   scripts/seed-traeff-piserver.sh  (seed Træff demo data)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,35 +14,55 @@ ENV_FILE="${DEPLOY_ROOT}/deploy/.env.pi"
 REMOTE_COMPOSE_FILE="AthletIQ-Deploy/deploy/docker-compose.yml"
 REMOTE_ENV_FILE="AthletIQ-Deploy/deploy/.env.pi"
 
+PLATFORM="${PLATFORM:-linux/arm64}"
+API_IMAGE="athletiq-api:pi"
+FRONTEND_IMAGE="athletiq-frontend:pi"
+LANDING_IMAGE="athletiq-landingpage:pi"
+
 DO_BUILD=1
-DO_SEED=0
+DO_WIPE=0
 DO_LOGS=0
 DO_DOWN_FIRST=0
+DO_BUILD_ON_PI=0
 
 usage() {
   cat <<'EOF'
 Usage: ./AthletIQ-Deploy/scripts/deploy-piserver.sh [options]
 
-Run from the AthletIQ-Deploy directory (or repo root with that path).
+Build and deploy the AthletIQ stack to piserver. Default: build api/frontend/
+landingpage locally (linux/arm64) and transfer them to the Pi (fast). No data is
+changed unless --wipe is passed.
 
 Options:
-  --seed         Run demo data seed after deploy (also applies any pending migrations)
+  --build-on-pi  Build images on the Pi instead of locally (slower, 15-30+ min)
+  --skip-build   Reuse existing local :pi image tags (transfer only)
+  --wipe         Stop the stack and delete Docker volumes (fresh DBs) before start
+  --down-first   Stop containers before deploy (volumes preserved)
+  --platform     Target platform for the local build (default: linux/arm64)
   --logs         Follow compose logs after deploy
-  --no-build     Skip image rebuild (docker compose up -d only)
-  --down-first   Stop containers before deploy (docker compose down, volumes preserved)
   -h, --help     Show this help
 
 Requires AthletIQ-Deploy/deploy/.env.pi (copy from deploy/.env.pi.example).
 SSH: set PI_SSH_PASSWORD in deploy/.env.pi, or use key auth (ssh-copy-id).
+
+Provisioning and demo seed are separate scripts:
+  scripts/provision-piserver.sh    # add a club + admin
+  scripts/seed-traeff-piserver.sh    # seed Træff demo data
+  scripts/fresh-deploy-traeff-piserver.sh # demo: wipe + provision + seed in one go
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --seed) DO_SEED=1; shift ;;
-    --logs) DO_LOGS=1; shift ;;
-    --no-build) DO_BUILD=0; shift ;;
+    --build-on-pi) DO_BUILD_ON_PI=1; shift ;;
+    --skip-build) DO_BUILD=0; shift ;;
+    --wipe) DO_WIPE=1; shift ;;
     --down-first) DO_DOWN_FIRST=1; shift ;;
+    --logs) DO_LOGS=1; shift ;;
+    --platform)
+      PLATFORM="${2:?--platform requires a value}"
+      shift 2
+      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
   esac
@@ -58,6 +83,7 @@ set +a
 : "${PI_REMOTE_DIR:=/home/${PI_USER}/athletiq}"
 
 SSH_TARGET="${PI_USER}@${PI_HOST}"
+NEXT_PUBLIC_API_BASE_URL="${NEXT_PUBLIC_API_BASE_URL:-same-origin}"
 
 SSH_BASE_OPTS=(-o ConnectTimeout=30 -o StrictHostKeyChecking=accept-new)
 if [[ -n "${PI_SSH_IDENTITY_FILE:-}" ]]; then
@@ -111,49 +137,119 @@ if ! ssh_cmd true; then
 fi
 
 echo "==> Ensuring remote directory ${PI_REMOTE_DIR}"
-ssh_cmd "mkdir -p ${PI_REMOTE_DIR}"
+ssh_cmd "mkdir -p ${PI_REMOTE_DIR}/AthletIQ-Deploy/deploy"
 
-echo "==> Syncing repository to ${SSH_TARGET}:${PI_REMOTE_DIR}"
-# shellcheck disable=SC2086
-rsync -avz --delete -e "${RSYNC_SHELL}" \
-  --exclude '.git/' \
-  --exclude 'node_modules/' \
-  --exclude '**/node_modules/' \
-  --exclude '**/bin/' \
-  --exclude '**/obj/' \
-  --exclude '**/.next/' \
-  --exclude '**/dist/' \
-  --exclude '**/__pycache__/' \
-  --exclude '**/.turbo/' \
-  --exclude '**/.pnpm-store/' \
-  --exclude '.DS_Store' \
-  --exclude 'AthletIQ-mobile/' \
-  --exclude 'AthletIQ/' \
-  --exclude 'piserver_reversed_proxy/' \
-  "${REPO_ROOT}/" "${SSH_TARGET}:${PI_REMOTE_DIR}/"
+if [[ "$DO_BUILD_ON_PI" -eq 1 ]]; then
+  # Build on the Pi: sync the source, then `docker compose up --build`.
+  echo "==> Syncing repository to ${SSH_TARGET}:${PI_REMOTE_DIR}"
+  # shellcheck disable=SC2086
+  rsync -avz --delete -e "${RSYNC_SHELL}" \
+    --exclude '.git/' \
+    --exclude 'node_modules/' \
+    --exclude '**/node_modules/' \
+    --exclude '**/bin/' \
+    --exclude '**/obj/' \
+    --exclude '**/.next/' \
+    --exclude '**/dist/' \
+    --exclude '**/__pycache__/' \
+    --exclude '**/.turbo/' \
+    --exclude '**/.pnpm-store/' \
+    --exclude '.DS_Store' \
+    --exclude 'AthletIQ-mobile/' \
+    --exclude 'AthletIQ/' \
+    --exclude 'piserver_reversed_proxy/' \
+    "${REPO_ROOT}/" "${SSH_TARGET}:${PI_REMOTE_DIR}/"
 
-echo "==> Uploading deploy/.env.pi to Pi"
-# shellcheck disable=SC2086
-rsync -avz -e "${RSYNC_SHELL}" "${ENV_FILE}" "${SSH_TARGET}:${PI_REMOTE_DIR}/${REMOTE_ENV_FILE}"
+  echo "==> Uploading deploy/.env.pi to Pi"
+  # shellcheck disable=SC2086
+  rsync -avz -e "${RSYNC_SHELL}" "${ENV_FILE}" "${SSH_TARGET}:${PI_REMOTE_DIR}/${REMOTE_ENV_FILE}"
 
-COMPOSE_CMD="cd ${PI_REMOTE_DIR} && docker compose -f ${REMOTE_COMPOSE_FILE} --env-file ${REMOTE_ENV_FILE}"
+  COMPOSE_CMD="cd ${PI_REMOTE_DIR} && docker compose -f ${REMOTE_COMPOSE_FILE} --env-file ${REMOTE_ENV_FILE}"
+else
+  # Build locally (default) and transfer images to the Pi.
+  for dir in AthletIQ-Backend AthletIQ-frontend AthletIQ-Landingpage; do
+    if [[ ! -d "${REPO_ROOT}/${dir}" ]]; then
+      echo "Missing sibling repo: ${REPO_ROOT}/${dir}" >&2
+      exit 1
+    fi
+  done
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "docker is required on this machine." >&2
+    exit 1
+  fi
+
+  if [[ "$DO_BUILD" -eq 1 ]]; then
+    echo "==> Building images locally for ${PLATFORM}"
+    docker buildx build --platform "${PLATFORM}" --load \
+      -t "${API_IMAGE}" \
+      -f "${REPO_ROOT}/AthletIQ-Backend/Dockerfile" \
+      "${REPO_ROOT}/AthletIQ-Backend"
+
+    docker buildx build --platform "${PLATFORM}" --load \
+      -t "${FRONTEND_IMAGE}" \
+      --build-arg "NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}" \
+      --build-arg "BACKEND_URL=http://api:8080" \
+      -f "${REPO_ROOT}/AthletIQ-frontend/Dockerfile" \
+      "${REPO_ROOT}/AthletIQ-frontend"
+
+    docker buildx build --platform "${PLATFORM}" --load \
+      -t "${LANDING_IMAGE}" \
+      -f "${REPO_ROOT}/AthletIQ-Landingpage/Dockerfile" \
+      "${REPO_ROOT}/AthletIQ-Landingpage"
+  else
+    echo "==> Skipping local build; transferring existing tags"
+    for img in "${API_IMAGE}" "${FRONTEND_IMAGE}" "${LANDING_IMAGE}"; do
+      if ! docker image inspect "${img}" >/dev/null 2>&1; then
+        echo "Missing local image: ${img} (run without --skip-build)" >&2
+        exit 1
+      fi
+    done
+  fi
+
+  echo "==> Syncing deploy compose + env to ${SSH_TARGET}"
+  # shellcheck disable=SC2086
+  rsync -avz -e "${RSYNC_SHELL}" \
+    "${DEPLOY_ROOT}/deploy/docker-compose.yml" \
+    "${SSH_TARGET}:${PI_REMOTE_DIR}/${REMOTE_COMPOSE_FILE}"
+  # shellcheck disable=SC2086
+  rsync -avz -e "${RSYNC_SHELL}" \
+    "${ENV_FILE}" \
+    "${SSH_TARGET}:${PI_REMOTE_DIR}/${REMOTE_ENV_FILE}"
+
+  echo "==> Transferring images to ${PI_HOST} (docker save | load)"
+  docker save "${API_IMAGE}" "${FRONTEND_IMAGE}" "${LANDING_IMAGE}" \
+    | gzip -1 \
+    | ssh_cmd "gunzip | docker load"
+
+  COMPOSE_CMD="cd ${PI_REMOTE_DIR} && docker compose -f ${REMOTE_COMPOSE_FILE} --env-file ${REMOTE_ENV_FILE}"
+fi
+
+echo "==> Ensuring external Docker network 'web' exists"
+ssh_cmd "docker network inspect web >/dev/null 2>&1 || docker network create web"
+
+if [[ "$DO_WIPE" -eq 1 ]]; then
+  echo "==> Wiping stack and volumes on ${PI_HOST} (DATABASE DATA WILL BE DELETED)"
+  ssh_cmd "${COMPOSE_CMD} down -v"
+fi
 
 if [[ "$DO_DOWN_FIRST" -eq 1 ]]; then
   echo "==> Stopping containers on ${PI_HOST} (volumes preserved)"
   ssh_cmd "${COMPOSE_CMD} down"
 fi
 
-if [[ "$DO_BUILD" -eq 1 ]]; then
-  echo "==> Building and starting containers on ${PI_HOST} (this can take 15–30+ min on a Pi)"
-  ssh_cmd "${COMPOSE_CMD} up -d --build"
+if [[ "$DO_BUILD_ON_PI" -eq 1 ]]; then
+  if [[ "$DO_BUILD" -eq 1 ]]; then
+    echo "==> Building and starting containers on ${PI_HOST} (this can take 15-30+ min on a Pi)"
+    ssh_cmd "${COMPOSE_CMD} up -d --build"
+  else
+    echo "==> Starting containers on ${PI_HOST} (no rebuild)"
+    ssh_cmd "${COMPOSE_CMD} up -d"
+  fi
 else
-  echo "==> Starting containers on ${PI_HOST} (no rebuild)"
-  ssh_cmd "${COMPOSE_CMD} up -d"
-fi
-
-if [[ "$DO_SEED" -eq 1 ]]; then
-  echo "==> Seeding demo data"
-  ssh_cmd "${COMPOSE_CMD} run --rm api dotnet AthletIQ.Api.dll --seed"
+  echo "==> Starting stack on ${PI_HOST} (using transferred images, no remote build)"
+  ssh_cmd "${COMPOSE_CMD} up -d --no-build"
+  ssh_cmd "${COMPOSE_CMD} up -d --no-build --force-recreate api frontend landingpage"
 fi
 
 echo "==> Container status"
@@ -163,12 +259,14 @@ cat <<EOF
 
 Deploy finished.
 
-  App:          http://${PI_HOST}:${FRONTEND_PORT:-5000}
-  Landing page: http://${PI_HOST}:${LANDINGPAGE_PORT:-8081}
-  API:          http://${PI_HOST}:${API_PORT:-8082}
-  Health:       http://${PI_HOST}:${API_PORT:-8082}/health
+  App:          http://$\{PI_HOST\}:$\{FRONTEND_PORT:-5000\}
+  Landing page: http://$\{PI_HOST\}:$\{LANDINGPAGE_PORT:-8081\}
+  API:          http://$\{PI_HOST\}:$\{API_PORT:-8082\}
+  Health:       http://$\{PI_HOST\}:$\{API_PORT:-8082\}/health
 
-First-time login: run with --seed, then use demo credentials from AthletIQ-Deploy/deploy/README.md
+Next steps (separate scripts):
+  Add a club + admin:    scripts/provision-piserver.sh --organization-name "Your FC" ...
+  Seed Træff demo data:  scripts/seed-traeff-piserver.sh [--dashboard]
 EOF
 
 if [[ "$DO_LOGS" -eq 1 ]]; then
