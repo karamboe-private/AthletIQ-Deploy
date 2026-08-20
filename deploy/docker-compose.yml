@@ -87,6 +87,12 @@ services:
       Gemini__ApiKey: ${GEMINI_API_KEY:-}
       Gemini__Model: ${GEMINI_MODEL:-gemini-3.5-flash}
       Gemini__ClinicalExtractionModel: ${GEMINI_CLINICAL_EXTRACTION_MODEL:-gemini-3.5-flash}
+      # --- Push notifications (OneSignal) ---
+      # Without these the API throws "OneSignal is not configured" and every
+      # queued push fails, so offline users get no notification.
+      OneSignal_App_Id: ${ONESIGNAL_APP_ID:-}
+      OneSignal_App_API_Key: ${ONESIGNAL_API_KEY:-}
+      OneSignal_BaseUrl: ${ONESIGNAL_BASE_URL:-https://api.onesignal.com}
     ports:
       - "${API_PORT:-8082}:8080"
     networks:

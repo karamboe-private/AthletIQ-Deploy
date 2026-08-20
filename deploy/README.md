@@ -51,6 +51,7 @@ AI provider settings (Gemini, OpenAI, DeepSeek, etc.) come from `AthletIQ-Backen
 - `CHAT_AI_PROVIDER`, `WEARABLE_AI_PROVIDER`, `NUTRITION_AI_PROVIDER`, `JOURNAL_AI_PROVIDER` — pick `Gemini`, `OpenAI`, or `DeepSeek` per capability.
 - `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` (e.g. `deepseek-v4-flash` or `deepseek-v4-pro`), `DEEPSEEK_CLINICAL_EXTRACTION_MODEL` — DeepSeek credentials/model.
 - `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_CLINICAL_EXTRACTION_MODEL` — Gemini credentials/model.
+- `ONESIGNAL_APP_ID`, `ONESIGNAL_API_KEY` — mobile push. Without them the API logs "OneSignal is not configured" and offline users never get a notification. See `AthletIQ-mobile/docs/onesignal.md`.
 
 Example to use DeepSeek for everything:
 
