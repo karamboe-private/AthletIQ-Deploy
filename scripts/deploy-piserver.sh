@@ -263,6 +263,8 @@ Deploy finished.
   Landing page: http://$\{PI_HOST\}:$\{LANDINGPAGE_PORT:-8081\}
   API:          http://$\{PI_HOST\}:$\{API_PORT:-8082\}
   Health:       http://$\{PI_HOST\}:$\{API_PORT:-8082\}/health
+  MinIO API:    http://$\{PI_HOST\}:$\{MINIO_API_PORT:-9000\}
+  MinIO console: http://$\{PI_HOST\}:$\{MINIO_CONSOLE_PORT:-9001\}  (user/password from MINIO_ROOT_*)
 
 Next steps (separate scripts):
   Add a club + admin:    scripts/provision-piserver.sh --organization-name "Your FC" ...

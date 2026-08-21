@@ -51,6 +51,42 @@ services:
       retries: 12
       start_period: 90s
 
+  minio:
+    image: minio/minio:latest
+    container_name: athletiq_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-athletiq}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-athletiq_secret}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - athletiq_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: athletiq_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-athletiq}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-athletiq_secret}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mc alias set athletiq http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing athletiq/athletiq-profiles
+
   api:
     image: athletiq-api:pi
     build:
@@ -63,6 +99,10 @@ services:
         condition: service_healthy
       hapi-fhir:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_URLS: http://+:8080
@@ -93,6 +133,12 @@ services:
       OneSignal_App_Id: ${ONESIGNAL_APP_ID:-}
       OneSignal_App_API_Key: ${ONESIGNAL_API_KEY:-}
       OneSignal_BaseUrl: ${ONESIGNAL_BASE_URL:-https://api.onesignal.com}
+      ObjectStorage__Endpoint: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
+      ObjectStorage__AccessKey: ${MINIO_ROOT_USER:-athletiq}
+      ObjectStorage__SecretKey: ${MINIO_ROOT_PASSWORD:-athletiq_secret}
+      ObjectStorage__ForcePathStyle: "true"
+      ObjectStorage__UseSsl: "false"
+      ObjectStorage__ProfilesBucket: ${MINIO_PROFILES_BUCKET:-athletiq-profiles}
     ports:
       - "${API_PORT:-8082}:8080"
     networks:
@@ -148,6 +194,7 @@ services:
 volumes:
   athletiq_postgres_data:
   athletiq_hapi_postgres_data:
+  athletiq_minio_data:
 
 networks:
   web:

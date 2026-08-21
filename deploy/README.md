@@ -1,6 +1,6 @@
 # Deploy AthletIQ to piserver (Docker)
 
-Run the full stack on a Raspberry Pi or other LAN host: **PostgreSQL**, **HAPI FHIR**, **.NET API**, **Next.js frontend**, and **marketing landing page**.
+Run the full stack on a Raspberry Pi or other LAN host: **PostgreSQL**, **HAPI FHIR**, **MinIO**, **.NET API**, **Next.js frontend**, and **marketing landing page**.
 
 ## Prerequisites (on the Pi)
 
@@ -136,7 +136,7 @@ Examples:
 |------|-------------|
 | `--build-on-pi` | Build images on the Pi instead of locally (15–30+ min) |
 | `--skip-build` | Reuse existing local `:pi` image tags (transfer only) |
-| `--wipe` | `docker compose down -v` — **deletes** Postgres + HAPI volumes (fresh DBs) |
+| `--wipe` | `docker compose down -v` — **deletes** Postgres, HAPI, and MinIO volumes (fresh DBs + stored photos) |
 | `--down-first` | Stop containers before deploy (volumes preserved) |
 | `--platform` | Target platform (default `linux/arm64`) |
 | `--logs` | Tail compose logs when finished |
@@ -194,6 +194,8 @@ script without arguments.
 | `postgres` | `postgres:17-alpine` | AthletIQ application database |
 | `hapi-fhir-db` | `postgres:16-alpine` | HAPI FHIR persistence |
 | `hapi-fhir` | `hapiproject/hapi:latest` | FHIR server (internal; journal API only) |
+| `minio` | `minio/minio` | S3-compatible object storage (player profile photos) |
+| `minio-init` | `minio/mc` | Creates the `athletiq-profiles` bucket on first start |
 | `api` | `AthletIQ-Backend/Dockerfile` | .NET 10 API |
 | `frontend` | `AthletIQ-frontend/Dockerfile` | Next.js web app |
 | `landingpage` | `AthletIQ-Landingpage/Dockerfile` | Static marketing site |
@@ -207,9 +209,10 @@ HAPI FHIR is not exposed on the host — clients use AthletIQ journal endpoints,
 | Landing page | http://piserver:8081 |
 | Web app | http://piserver:5000 |
 | API health | http://piserver:8082/health |
+| MinIO console | http://piserver:9001 |
 | Swagger | Development only (`http://localhost:8080/swagger` when running locally) |
 
-Change ports via `LANDINGPAGE_PORT`, `FRONTEND_PORT`, and `API_PORT` in `deploy/.env.pi`.
+Change ports via `LANDINGPAGE_PORT`, `FRONTEND_PORT`, `API_PORT`, `MINIO_API_PORT`, and `MINIO_CONSOLE_PORT` in `deploy/.env.pi`.
 
 ## Database migrations
 
